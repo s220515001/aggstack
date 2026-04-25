@@ -23,10 +23,10 @@ No new blocks. No new items. Just a better inventory.
 
 ## Usage
 
-| Action | How to |
-|--------|--------|
+| Action                     | How to                                             |
+|----------------------------|----------------------------------------------------|
 | Create an aggregated stack | Drag two similar items with different NBT together |
-| View sub-items | Hover + hold expand key (default: Left Alt) |
-| Switch primary item | Hold Ctrl + Scroll |
-| Extract one sub-item | Shift + Left Click on the aggregated stack |
-| Open config screen | Press G (default) |
+| View sub-items             | Hover + hold expand key (default: Left Alt)        |
+| Switch primary item        | Hold Ctrl + Scroll                                 |
+| Extract one sub-item       | Shift + Left Click on the aggregated stack         |
+| Open config screen         | Press G (default)                                  |
