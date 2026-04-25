@@ -12,10 +12,10 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import tfh.agstack.Agstack;
 import tfh.agstack.component.AggregatedStackComponent;
 import tfh.agstack.component.ModDataComponents;
 import tfh.agstack.config.ModConfig;
+import tfh.agstack.util.DropFlag;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,12 +24,18 @@ import java.util.Set;
 @Mixin(ScreenHandler.class)
 public abstract class ScreenHandlerMixin {
 
-    @Shadow public abstract ItemStack getCursorStack();
-    @Shadow public abstract void setCursorStack(ItemStack stack);
-    @Shadow public abstract ItemStack quickMove(PlayerEntity player, int slot);
+    @Shadow
+    public abstract ItemStack getCursorStack();
+
+    @Shadow
+    public abstract void setCursorStack(ItemStack stack);
+
+    @Shadow
+    public abstract ItemStack quickMove(PlayerEntity player, int slot);
 
     @Unique
     private boolean justSplitAggregated = false;
+
     @Unique
     private int lastSplitSlot = -1;
 
@@ -59,6 +65,29 @@ public abstract class ScreenHandlerMixin {
     private void onSlotClick(int slotIndex, int button, SlotActionType actionType,
                              PlayerEntity player, CallbackInfo ci) {
         ScreenHandler handler = (ScreenHandler) (Object) this;
+        ModConfig config = ModConfig.get();
+
+        // ------------------------------------------------------------
+        // 1. 拖拽聚合槽到背包外（整组丢出）
+        // ------------------------------------------------------------
+        if (slotIndex == -1 && actionType == SlotActionType.PICKUP && button == 0) {
+            ItemStack cursor = getCursorStack();
+            if (!cursor.isEmpty()) {
+                AggregatedStackComponent comp = cursor.get(ModDataComponents.AGGREGATED_STACK);
+                if (comp != null && !comp.isEmpty()) {
+                    DropFlag.setSkipDropProcessing(true);
+                    try {
+                        player.dropItem(cursor, true, false);
+                    } finally {
+                        DropFlag.clear();
+                    }
+                    setCursorStack(ItemStack.EMPTY);
+                    ci.cancel();
+                    return;
+                }
+            }
+        }
+
         if (slotIndex < 0 || slotIndex >= handler.slots.size()) return;
 
         Slot slot = handler.slots.get(slotIndex);
@@ -68,9 +97,25 @@ public abstract class ScreenHandlerMixin {
         AggregatedStackComponent cursorComp = cursor.get(ModDataComponents.AGGREGATED_STACK);
         boolean isPlayerInventory = slot.inventory instanceof PlayerInventory;
         boolean allowed = isAllowedContainer(handler);
-        ModConfig config = ModConfig.get();
 
-        // ===== 处理 QUICK_MOVE (Shift+左键) =====
+        // ------------------------------------------------------------
+        // 2. Ctrl+Q 整组丢弃（THROW 操作且槽位是聚合槽）
+        // ------------------------------------------------------------
+        if (actionType == SlotActionType.THROW && slotComp != null) {
+            DropFlag.setSkipDropProcessing(true);
+            try {
+                player.dropItem(slotStack, true, false);
+            } finally {
+                DropFlag.clear();
+            }
+            slot.setStack(ItemStack.EMPTY);
+            ci.cancel();
+            return;
+        }
+
+        // ------------------------------------------------------------
+        // 3. 原 Shift+左键拆分逻辑（从聚合槽中拆出一个主物品）
+        // ------------------------------------------------------------
         if (actionType == SlotActionType.QUICK_MOVE) {
             if (justSplitAggregated && slotIndex == lastSplitSlot) {
                 justSplitAggregated = false;
@@ -78,9 +123,7 @@ public abstract class ScreenHandlerMixin {
                 ci.cancel();
                 return;
             }
-
             if (slotComp != null) {
-                // 从聚合槽中拆分一个物品（如果主物品是黑名单，也应该允许拆分？不阻止）
                 splitOneItemFromAggregated(slot, slotComp, player);
                 justSplitAggregated = true;
                 lastSplitSlot = slotIndex;
@@ -90,17 +133,20 @@ public abstract class ScreenHandlerMixin {
             return;
         }
 
-        // ===== 双击合并（PICKUP_ALL）优先处理，跳过黑名单物品 =====
+        // ------------------------------------------------------------
+        // 4. 双击合并（PICKUP_ALL）
+        // ------------------------------------------------------------
         if (actionType == SlotActionType.PICKUP_ALL && button == 0 && !slotStack.isEmpty()) {
             handlePickupAll(slotIndex, player, handler);
             ci.cancel();
             return;
         }
 
-        // ===== 鼠标持有聚合槽并点击空格子 =====
+        // ------------------------------------------------------------
+        // 5. 光标持有聚合槽点击空格子
+        // ------------------------------------------------------------
         if (slotComp == null && slotStack.isEmpty() && !cursor.isEmpty()) {
             if (cursorComp != null) {
-                // 检查光标上的聚合槽整体是否含有黑名单物品？不应该，因为黑名单物品无法进入聚合槽
                 slot.setStack(cursor.copy());
                 setCursorStack(ItemStack.EMPTY);
                 ci.cancel();
@@ -108,7 +154,9 @@ public abstract class ScreenHandlerMixin {
             }
         }
 
-        // 禁止容器逻辑：如果光标上是聚合槽，不允许放入；如果槽位是聚合槽且光标是普通物品，不允许交互
+        // ------------------------------------------------------------
+        // 6. 禁止容器过滤
+        // ------------------------------------------------------------
         if (!allowed && !isPlayerInventory) {
             if (cursorComp != null) {
                 ci.cancel();
@@ -120,7 +168,9 @@ public abstract class ScreenHandlerMixin {
             }
         }
 
-        // ===== 拖拽创建聚合槽（两个普通物品），检查黑名单 =====
+        // ------------------------------------------------------------
+        // 7. 拖拽创建聚合槽（两个普通物品）
+        // ------------------------------------------------------------
         if (slotComp == null && !slotStack.isEmpty() && !cursor.isEmpty() &&
                 cursor.getItem() == slotStack.getItem() &&
                 cursorComp == null &&
@@ -130,7 +180,6 @@ public abstract class ScreenHandlerMixin {
                 ci.cancel();
                 return;
             }
-
             if (canMergeNormally(cursor, slotStack)) {
                 return;
             }
@@ -139,19 +188,16 @@ public abstract class ScreenHandlerMixin {
             return;
         }
 
-        // ===== 聚合槽相关交互 =====
+        // ------------------------------------------------------------
+        // 8. 聚合槽相关交互
+        // ------------------------------------------------------------
         if (slotComp != null) {
 
-            if (actionType == SlotActionType.THROW) {
-                handleThrow(slot, slotComp, player);
-                ci.cancel();
-                return;
-            }
-
+            // 左键点击聚合槽
             if (actionType == SlotActionType.PICKUP && button == 0) {
 
+                // 合并两个聚合槽
                 if (cursorComp != null && cursor.getItem() == slotStack.getItem()) {
-                    // 合并两个聚合槽，检查来源聚合槽是否含有黑名单物品
                     if (containsBlacklisted(cursorComp)) {
                         ci.cancel();
                         return;
@@ -161,6 +207,7 @@ public abstract class ScreenHandlerMixin {
                     return;
                 }
 
+                // 拿起整个聚合槽
                 if (cursor.isEmpty()) {
                     setCursorStack(slotStack.copy());
                     slot.setStack(ItemStack.EMPTY);
@@ -189,6 +236,7 @@ public abstract class ScreenHandlerMixin {
                 return;
             }
 
+            // 右键点击聚合槽（分半操作）
             if (actionType == SlotActionType.PICKUP && button == 1) {
                 handleRightClick(slot, slotStack, slotComp, cursor);
                 ci.cancel();
@@ -197,7 +245,7 @@ public abstract class ScreenHandlerMixin {
         }
     }
 
-    // ==================== 辅助方法 ====================
+    // ==================== 辅助方法（原模组已有，未修改） ====================
 
     @Unique
     private boolean containsBlacklisted(AggregatedStackComponent comp) {
@@ -217,7 +265,6 @@ public abstract class ScreenHandlerMixin {
 
         net.minecraft.item.Item targetItem = clickedStack.getItem();
 
-        // 收集所有同物品且不在黑名单中的槽位
         List<Slot> matchingSlots = new ArrayList<>();
         for (Slot slot : handler.slots) {
             ItemStack stack = slot.getStack();
@@ -296,7 +343,6 @@ public abstract class ScreenHandlerMixin {
 
         for (ItemStack sub : sourceItems) {
             if (added >= available) break;
-            // 检查子物品是否在黑名单中，如果是则不允许合并（实际上不应该发生）
             if (config.isBlacklisted(sub)) continue;
             newTargetItems.add(sub.copy());
             added++;
@@ -434,13 +480,6 @@ public abstract class ScreenHandlerMixin {
                 }
             }
         }
-    }
-
-    @Unique
-    private void handleThrow(Slot slot, AggregatedStackComponent comp, PlayerEntity player) {
-        ItemStack slotStack = slot.getStack();
-        player.dropItem(slotStack, true);
-        slot.setStack(ItemStack.EMPTY);
     }
 
     @Unique
