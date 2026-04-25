@@ -1,0 +1,35 @@
+{
+	"schemaVersion": 1,
+	"id": "agstack",
+	"version": "${version}",
+	"name": "agstack",
+	"description": "This is an NBT-based item aggregation mod for Fabric.",
+	"authors": [
+		"_375_!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/agstack/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"tfh.agstack.Agstack"
+		],
+		"client": ["tfh.agstack.AgstackClient"],
+		"fabric-datagen": [
+			"tfh.agstack.AgstackDataGenerator"
+		]
+	},
+	"mixins": [
+		"agstack.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.18.6",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
