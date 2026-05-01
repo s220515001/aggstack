@@ -6,7 +6,7 @@
 
 ## What is AggStack?
 
-AggStack is a Fabric mod for Minecraft 1.21.2+ that allows stacking items with different NBT data (enchantments, durability, potion effects, etc.) into a single inventory slot.
+AggStack is a Fabric mod for Minecraft 1.21.1+ that allows stacking items with different NBT data (enchantments, durability, potion effects, etc.) into a single inventory slot.
 
 No new blocks. No new items. Just a better inventory.
 
